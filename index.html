@@ -9,55 +9,94 @@
 
 <body>
   <h1>
-    PID 시뮬레이션
+    PID 제어 시뮬레이션
   </h1>
   <div>
-
+    <p>
+      저항과 관성이 있는 간단한 pid 시스템을 시뮬레이션해볼 수 있는 프로그램입니다.
+      이 시스템은 간단하게는 DC모터를 사용해서 각도를 제어하는 시스템이라고 생각해도 무방합니다
+      시뮬레이션 속도 문제로 실제 시스템의 특성을 많이 반영하지는 못해서 실제 시스템과 차이가 있습니다.
+      예를 들어 실제로는 I gain은 정상상태오차를 제거하기 위해 사용되는데,
+      시뮬레이션 한 시스템은 정상상태오차가 거의 없어서 I gain을 조금이라도 올리면 오히려 시스템이 불안정해집니다.
+    </p>
+    <p>
+      이 시뮬레이션에서 확인해볼 수 있는 내용 중 일부는 아래와 같습니다.
+    <ul>
+      <li>P gain에 비례하여 가속도가 결정된다.</li>
+      <li>D gain을 높이면 시스템이 더 안정적으로 변한다.</li>
+      <li>Antiwindup은 오차 적분의 발산을 막는다.</li>
+      <li>제어 주기가 너무 커지면 시스템이 극도로 불안정해진다.</li>
+    </ul>
+    </p>
   </div>
   <div>
     <canvas id="cnv" width="640" height="480"></canvas>
   </div>
   <div>
-    <div>
-      P gain : <input type="range" min="0" max="5" step="0.01" value="1" id="inputP" onchange="updateGain(event)"
-        oninput="updateGain(event)">
-    </div>
-    <div>
-      I gain : <input type="range" min="0" max="10" step="0.01" value="0" id="inputI" onchange="updateGain(event)"
-        oninput="updateGain(event)">
-    </div>
-    <div>
-      D gain : <input type="range" min="0" max="5" step="0.01" value="0" id="inputD" onchange="updateGain(event)"
-        oninput="updateGain(event)">
-    </div>
+    <table>
+      <thead>
+        <th>Parameter</th>
+        <th>Input</th>
+        <th>Value</th>
+      </thead>
+      <tbody id="parameterTableBody">
+      </tbody>
+    </table>
   </div>
   <script>
     const ctx = cnv.getContext('2d')
 
-    let gainP = inputP.value;
-    let gainI = inputI.value;
-    let gainD = inputD.value;
-
-    console.log(gainP, gainI, gainD)
-
-    function updateGain(event) {
-      let { target } = event;
-      let { value } = target;
-      switch (target.id) {
-        case 'inputP': gainP = value;
-          break;
-        case 'inputI': gainI = value;
-          break;
-        case 'inputD': gainD = value;
-          break;
-      }
-      simulate()
+    let parameters = {
+      'P gain': { value: 1 },
+      'I gain': { value: 0, max: 1 },
+      'D gain': { value: 0 },
+      'Antiwindup': { value: 10, max: 100 },
+      'Control period': { value: 0.01, min: 0.001, max: 0.5, step: 0.001 },
     }
+
+    function tdWrap(element) {
+      let td = document.createElement("td")
+      td.appendChild(element);
+      return td;
+    }
+
+    Object.keys(parameters).forEach(key => {
+      let config = parameters[key]
+
+      let label = document.createElement("label");
+      let input = document.createElement("input");
+      let row = document.createElement("tr")
+      let display = document.createElement('p');
+
+      row.appendChild(tdWrap(label));
+      row.appendChild(tdWrap(input));
+      row.appendChild(tdWrap(display));
+
+      label.innerText = key;
+      input.type = 'range';
+      input.min = config.min ? config.min : 0;
+      input.max = config.max ? config.max : 50;
+      input.step = config.step ? config.step : 0.01;
+      input.value = config.value;
+      display.innerText = input.value;
+      input.onchange = input.oninput = function () {
+        config.value = +input.value;
+        display.innerText = input.value;
+        simulate();
+      }
+      parameterTableBody.appendChild(row);
+    })
 
     function simulate() {
       const duration = 10;
+
+      const gainP = parameters['P gain'].value
+      const gainI = parameters['I gain'].value
+      const gainD = parameters['D gain'].value
+      const antiwindup = parameters['Antiwindup'].value;
+      const dt = parameters['Control period'].value;
+
       const fraction = 100;
-      const antiwindup = 5;
 
       let dest = t => 50
       let getControl = c => x => Math.atan(x / c) * c;
@@ -67,41 +106,43 @@
         v: 0,
         x: 0,
         m: 0.1,
-        dt: 0.01
       }
 
       let ts = []
       let ys = []
       let ds = []
+      let is = []
 
       let errBef = 0;
       let errI = 0;
-      for (let t = 0; t < duration; t += system.dt) {
+      for (let t = 0; t < duration; t += dt) {
         let destValue = dest(t)
 
         let err = destValue - system.x;
-        errI += err * system.dt;
+        errI += err * dt;
         if (errI > antiwindup) errI = antiwindup;
         if (errI < -antiwindup) errI = -antiwindup;
-        let errD = (err - errBef) / system.dt;
+        let errD = (err - errBef) / dt;
         errBef = err;
 
         let output = err * gainP + errI * gainI + errD * gainD;
         let acc = control(output) / system.m;
 
-        system.v += acc * system.dt;
-        if (system.v > 0) {
-          system.v -= fraction * system.dt;
-          if (system.v < 0) system.v = 0;
-        } else {
-          system.v += fraction * system.dt;
-          if (system.v > 0) system.v = 0;
-        }
-        system.x += system.v * system.dt;
+        system.v += acc * dt;
+        system.v -= system.v * 0.1 * dt;
+        // if (system.v > 0) {
+        //   system.v -= fraction * dt;
+        //   if (system.v < 0) system.v = 0;
+        // } else {
+        //   system.v += fraction * dt;
+        //   if (system.v > 0) system.v = 0;
+        // }
+        system.x += system.v * dt;
 
         ts.push(t);
         ys.push(system.x);
         ds.push(destValue);
+        is.push(errI);
       }
 
       ctx.clearRect(0, 0, 999, 999);
@@ -122,6 +163,15 @@
         ctx.lineTo(x, y);
       }
       ctx.stroke();
+
+      // ctx.beginPath()
+      // ctx.moveTo(-100, cnv.height);
+      // for (let i = 0; i < ts.length; i++) {
+      //   let x = ts[i] * cnv.width / duration;
+      //   let y = cnv.height / 2 - is[i] * 5;
+      //   ctx.lineTo(x, y);
+      // }
+      // ctx.stroke();
     }
 
     simulate()
