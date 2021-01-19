@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+
+<body>
+  <h1>
+    PID 시뮬레이션
+  </h1>
+  <div>
+
+  </div>
+  <div>
+    <canvas id="cnv" width="640" height="480"></canvas>
+  </div>
+  <div>
+    <div>
+      P gain : <input type="range" min="0" max="5" step="0.01" value="1" id="inputP" onchange="updateGain(event)"
+        oninput="updateGain(event)">
+    </div>
+    <div>
+      I gain : <input type="range" min="0" max="10" step="0.01" value="0" id="inputI" onchange="updateGain(event)"
+        oninput="updateGain(event)">
+    </div>
+    <div>
+      D gain : <input type="range" min="0" max="5" step="0.01" value="0" id="inputD" onchange="updateGain(event)"
+        oninput="updateGain(event)">
+    </div>
+  </div>
+  <script>
+    const ctx = cnv.getContext('2d')
+
+    let gainP = inputP.value;
+    let gainI = inputI.value;
+    let gainD = inputD.value;
+
+    console.log(gainP, gainI, gainD)
+
+    function updateGain(event) {
+      let { target } = event;
+      let { value } = target;
+      switch (target.id) {
+        case 'inputP': gainP = value;
+          break;
+        case 'inputI': gainI = value;
+          break;
+        case 'inputD': gainD = value;
+          break;
+      }
+      simulate()
+    }
+
+    function simulate() {
+      const duration = 10;
+      const fraction = 100;
+      const antiwindup = 5;
+
+      let dest = t => 50
+      let getControl = c => x => Math.atan(x / c) * c;
+      let control = getControl(10);
+
+      let system = {
+        v: 0,
+        x: 0,
+        m: 0.1,
+        dt: 0.01
+      }
+
+      let ts = []
+      let ys = []
+      let ds = []
+
+      let errBef = 0;
+      let errI = 0;
+      for (let t = 0; t < duration; t += system.dt) {
+        let destValue = dest(t)
+
+        let err = destValue - system.x;
+        errI += err * system.dt;
+        if (errI > antiwindup) errI = antiwindup;
+        if (errI < -antiwindup) errI = -antiwindup;
+        let errD = (err - errBef) / system.dt;
+        errBef = err;
+
+        let output = err * gainP + errI * gainI + errD * gainD;
+        let acc = control(output) / system.m;
+
+        system.v += acc * system.dt;
+        if (system.v > 0) {
+          system.v -= fraction * system.dt;
+          if (system.v < 0) system.v = 0;
+        } else {
+          system.v += fraction * system.dt;
+          if (system.v > 0) system.v = 0;
+        }
+        system.x += system.v * system.dt;
+
+        ts.push(t);
+        ys.push(system.x);
+        ds.push(destValue);
+      }
+
+      ctx.clearRect(0, 0, 999, 999);
+      ctx.beginPath()
+      ctx.moveTo(-100, cnv.height);
+      for (let i = 0; i < ts.length; i++) {
+        let x = ts[i] * cnv.width / duration;
+        let y = cnv.height - ys[i] * 5;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      ctx.beginPath()
+      ctx.moveTo(-100, cnv.height);
+      for (let i = 0; i < ts.length; i++) {
+        let x = ts[i] * cnv.width / duration;
+        let y = cnv.height - ds[i] * 5;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    simulate()
+  </script>
+</body>
+
+</html>
